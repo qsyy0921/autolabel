@@ -2,6 +2,8 @@
 
 视频自动标注平台设计与原型项目。
 
+![视频自动标注平台架构图](assets/video-auto-label-architecture.png)
+
 当前阶段范围收敛为：
 
 - 输入数据为视频
