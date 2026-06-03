@@ -2,7 +2,7 @@
 
 视频自动标注平台设计与原型项目。
 
-![视频自动标注平台架构图](assets/video-auto-label-architecture.png)
+![视频自动标注平台总体架构](assets/video-auto-label-architecture-v2.png)
 
 当前阶段范围收敛为：
 
@@ -440,6 +440,292 @@ Prediction
   - `workflow_version`
   - `model_version`
 
+### 8.6 Feature Store 的角色
+
+Feature Store 不是检测模型、分割模型、关键帧模型的替代品，而是工作流里的长期记忆层。
+
+它不直接负责发现目标或生成 mask，而是给前面的节点提供：
+
+- 历史相似样本
+- 人工修正经验
+- 类别先验
+- 难例记忆
+- 伪标签候选
+- 质量评估依据
+
+在当前工作流里，它位于：
+
+```text
+Video Upload
+-> Scene Split
+-> KeyFrame Select
+-> Detect
+-> Optional Segment
+-> Human Review
+-> Final Annotation
+-> Correction Log
+-> Feature Store
+-> Export / Learn
+```
+
+但它同时会反向增强前面的节点：
+
+- `KeyFrame Select`
+- `Detect`
+- `Segment`
+- `Review`
+- `Learn`
+
+因此 Feature Store 既是结果沉淀层，也是推理增强层。
+
+### 8.7 Feature Store 驱动的增强工作流
+
+建议把主链路细化为：
+
+```text
+视频输入
+-> 抽帧 / 镜头切分
+-> 关键帧选择
+-> 检测模型 / 开放词汇检测模型
+-> 分割模型
+-> 特征提取器
+-> 特征库检索
+-> 预测结果融合
+-> 人工审核
+-> Correction Log
+-> 特征库增量更新
+-> 主动学习 / 伪标签 / 微调 / 模型评估
+```
+
+这里存在两个方向：
+
+- 写入方向：人工审核后的高质量结果进入 Feature Store
+- 读取方向：Feature Store 反过来辅助关键帧选择、检测纠错、分割质量判断、人工审核和学习闭环
+
+### 8.8 Feature Store 如何辅助关键帧选择
+
+关键帧选择不能只靠等间隔抽帧。
+
+更合理的做法是：
+
+1. 对候选帧提取 embedding
+2. 在 Feature Store 中检索相似历史样本
+3. 根据新颖性、稀有类、历史高错误区域重新计算优先级
+
+推荐评分思路：
+
+```text
+frame_score =
+  novelty_score
+  + rare_class_score
+  + historical_error_score
+  + motion_change_score
+```
+
+含义：
+
+- `novelty_score`：和已有样本差异越大，越值得选
+- `rare_class_score`：疑似稀有类别，越值得选
+- `historical_error_score`：类似样本过去经常被模型标错，越值得选
+- `motion_change_score`：画面变化明显，越值得选
+
+这样关键帧选择可以从“均匀抽帧”升级为：
+
+- 挑新样本
+- 挑难样本
+- 挑模型不熟悉的样本
+- 挑对训练更有价值的样本
+
+### 8.9 Feature Store 如何辅助检测模型
+
+检测模型负责产生候选框，例如：
+
+- `YOLO`
+- `YOLO-World`
+- `GroundingDINO`
+
+Feature Store 可以在检测后做三类增强。
+
+第一类：类别纠错
+
+- 检测模型给出候选框和类别
+- 裁剪目标区域并提取 embedding
+- 在 Feature Store 中查找 topK 相似实例
+- 如果检测模型置信度低，但检索结果类别高度一致，则把该类别作为更强建议
+
+第二类：误检过滤
+
+- 某个框在正样本库里几乎找不到相似邻居
+- 但和历史误检样本非常相似
+- 则降低该框置信度，甚至直接降级为待人工重点审核
+
+第三类：漏检补全
+
+- 某些区域和历史目标实例高度相似
+- 但检测模型没有产出 proposal
+- 系统可以生成“疑似漏检”提示，送给人工审核
+
+### 8.10 Feature Store 如何辅助分割模型
+
+分割模型默认采用 `SAM2`。
+
+Feature Store 可以从三个方向帮助分割。
+
+第一，提供更好的 prompt
+
+- 检测模型只给出 box
+- Feature Store 可检索历史相似目标的中心点、前景点、背景点和典型形状
+- 再将 `box prompt + point prompt + shape prior` 一起提供给 `SAM2`
+
+第二，做 mask 质量评估
+
+- 对生成后的 mask crop 提取 embedding
+- 与同类高质量 mask 样本比较
+- 如果相似度异常低，或面积、长宽比、轮廓复杂度异常，则提高人工审核优先级
+
+第三，辅助视频内连续帧传播
+
+- 上一帧人工确认的 mask 进入临时轨迹缓存或 Feature Store
+- 当前帧通过相似检索找到相邻时刻的可靠实例
+- 用于辅助当前帧分割或传播修正
+
+### 8.11 Feature Store 如何辅助人工审核
+
+这是最容易快速产生价值的地方。
+
+审核工作台右侧建议显示：
+
+- 当前模型预测
+- 历史相似样本
+- 历史人工最终标注
+- 历史错误类型
+- 同类标准样例
+- 建议类别和置信提示
+
+这样审核员不是从零判断，而是在历史案例支持下做确认或修正。
+
+### 8.12 Feature Store 如何进入主动学习、伪标签和微调
+
+Feature Store 不只服务审核，还直接参与自进化。
+
+主动学习可综合四类信号：
+
+```text
+review_priority =
+  0.4 * uncertainty_score
+  + 0.3 * novelty_score
+  + 0.2 * correction_risk_score
+  + 0.1 * rare_class_score
+```
+
+含义：
+
+- `uncertainty_score`：模型不确定
+- `novelty_score`：特征库里缺少类似样本
+- `correction_risk_score`：历史上类似样本经常被改
+- `rare_class_score`：疑似稀有类别
+
+伪标签不能只依赖模型置信度，建议增加特征库校验门：
+
+```text
+high-quality pseudo label if:
+  detector_score high
+  and retrieval_topk_consistency high
+  and max_similarity high
+  and class_error_rate low
+```
+
+训练集构建时，Feature Store 应支持导出：
+
+- accepted samples
+- corrected samples
+- manual added samples
+- hard negative samples
+- high confidence pseudo labels
+
+其中 `hard_negative_samples` 非常重要，它们通常比普通正样本更能减少误检。
+
+### 8.13 Feature Store 的版本治理
+
+Feature Store 必须记录版本信息，否则不同模型产生的向量会混在一起失真。
+
+至少需要：
+
+- `embedding_model_version`
+- `detector_model_version`
+- `segment_model_version`
+- `workflow_version`
+- `feature_schema_version`
+
+如果后续从 `CLIP` 切到 `DINOv2` 新版本，或者从普通 crop 特征切到 masked crop 特征，应视为不同特征空间，不能直接混用。
+
+### 8.14 Feature Service 形态
+
+建议将 Feature Store 实现为独立的 `Feature Service`，而不是散落在工作流节点里的临时逻辑。
+
+推荐接口：
+
+- `POST /features/extract`
+- `POST /features/upsert`
+- `POST /features/search`
+- `POST /features/mark-inactive`
+- `GET /features/similar`
+- `GET /features/stats`
+- `POST /features/build-index`
+- `POST /features/evaluate-index`
+
+工作流中的其他节点通过接口调用它。
+
+```text
+Workflow Engine
+  ├── SceneSplitNode
+  ├── KeyFrameSelectNode
+  │       └── FeatureService.novelty_score()
+  ├── DetectNode
+  ├── DetectionRefineNode
+  │       └── FeatureService.search_similar()
+  ├── SegmentNode
+  ├── MaskQualityNode
+  │       └── FeatureService.compare_mask_feature()
+  ├── ReviewNode
+  │       └── show similar examples
+  ├── CorrectionLogNode
+  ├── FeatureUpdateNode
+  │       └── FeatureService.upsert()
+  ├── ActiveLearningNode
+  │       └── FeatureService.novelty/error stats
+  └── ExportNode
+```
+
+### 8.15 MVP 落地顺序
+
+推荐按五个阶段推进：
+
+1. 审核辅助
+   - 人工确认后裁剪 crop
+   - 提取 `CLIP` 或 `DINOv2` embedding
+   - 建立 `FAISS` 相似检索
+   - 在审核页面展示相似历史样本
+
+2. 主动学习
+   - 将低置信预测、新颖样本、高错误类别排入人工优先审核队列
+
+3. 预测纠错
+   - 检测结果结合检索结果做类别重打分、误检过滤、漏检提示
+
+4. 伪标签与训练集构建
+   - 用高置信度、高一致性的候选自动进入伪标签池
+
+5. 候选模型训练与评估
+   - 从 `FeatureStore / Annotation / CorrectionLog` 构建训练集
+   - 微调候选模型
+   - 固定验证集评估
+   - 灰度发布
+
+### 8.16 Feature Store 详细图
+
+![Feature Store 与自进化闭环](assets/feature-store-self-evolving-loop.png)
+
 ## 9. 数据模型
 
 ### 9.1 Project
@@ -549,10 +835,27 @@ annotation_id
 category
 crop_uri
 mask_uri
+embedding_model_version
 clip_embedding_uri
 dinov2_embedding_uri
 quality_score
+hardness_score
+novelty_score
 model_version
+workflow_version
+feature_schema_version
+created_at
+```
+
+### 9.9 FeatureVector
+
+```text
+id
+feature_item_id
+vector_type
+dim
+vector_uri
+index_scope
 created_at
 ```
 
