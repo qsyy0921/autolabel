@@ -225,6 +225,33 @@ button.primary {
   gap: 8px;
 }
 
+.shortcut-list {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.shortcut-list span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+kbd {
+  min-width: 24px;
+  padding: 2px 6px;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+  text-align: center;
+}
+
 .section-title {
   color: var(--muted);
   font-size: 12px;
@@ -432,6 +459,25 @@ button.primary {
 .ai-tools {
   flex: 1 1 420px;
   justify-content: flex-end;
+}
+
+.ai-toggle {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--ink);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ai-toggle input {
+  min-height: auto;
+  margin: 0;
 }
 
 .ai-tools input {

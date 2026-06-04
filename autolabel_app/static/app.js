@@ -9,6 +9,7 @@ const state = {
   polygonDraft: [],
   autosaveTimer: null,
   labelModalOpen: false,
+  aiEnabled: false,
   aiBusy: false,
 };
 
@@ -60,6 +61,7 @@ const els = {
   finishPolygonButton: document.getElementById("finishPolygonButton"),
   deleteButton: document.getElementById("deleteButton"),
   saveButton: document.getElementById("saveButton"),
+  aiAssistToggle: document.getElementById("aiAssistToggle"),
   samPromptInput: document.getElementById("samPromptInput"),
   samRefineButton: document.getElementById("samRefineButton"),
   samFindButton: document.getElementById("samFindButton"),
@@ -99,6 +101,13 @@ function boot() {
   els.finishPolygonButton.addEventListener("click", finishPolygonDraft);
   els.deleteButton.addEventListener("click", deleteSelectedAnnotation);
   els.saveButton.addEventListener("click", saveCurrentFrame);
+  els.aiAssistToggle.addEventListener("change", () => {
+    state.aiEnabled = els.aiAssistToggle.checked;
+    els.status.textContent = state.aiEnabled
+      ? "AI 辅助标注已开启：Ctrl+J 精修当前对象，Ctrl+K 查找当前帧同类"
+      : "AI 辅助标注已关闭，当前为纯手工标注";
+    render();
+  });
   els.samRefineButton.addEventListener("click", refineSelectedWithSam31);
   els.samFindButton.addEventListener("click", findSimilarWithSam31);
   els.canvas.addEventListener("mousedown", onMouseDown);
@@ -242,10 +251,12 @@ function render() {
 function renderAiControls() {
   const frame = currentFrame();
   const annotation = frame?.annotations.find((item) => item.id === state.selectedId);
-  els.samRefineButton.disabled = !state.project || !annotation || state.aiBusy;
-  els.samFindButton.disabled = !state.project || state.aiBusy;
-  els.samRefineButton.textContent = state.aiBusy ? "AI 处理中" : "AI 精修当前对象";
-  els.samFindButton.textContent = state.aiBusy ? "AI 处理中" : "AI 查找当前帧同类";
+  els.aiAssistToggle.checked = state.aiEnabled;
+  els.samPromptInput.disabled = !state.aiEnabled || state.aiBusy;
+  els.samRefineButton.disabled = !state.aiEnabled || !state.project || !annotation || state.aiBusy;
+  els.samFindButton.disabled = !state.aiEnabled || !state.project || state.aiBusy;
+  els.samRefineButton.textContent = state.aiBusy ? "AI 处理中" : "AI 精修";
+  els.samFindButton.textContent = state.aiBusy ? "AI 处理中" : "查找同类";
   if (annotation && !els.samPromptInput.value.trim()) {
     els.samPromptInput.placeholder = annotation.category || "object";
   }
@@ -316,6 +327,10 @@ function renderAnnotations() {
 }
 
 async function refineSelectedWithSam31() {
+  if (!state.aiEnabled) {
+    els.status.textContent = "请先开启 AI 辅助标注";
+    return;
+  }
   const frame = currentFrame();
   const annotation = frame?.annotations.find((item) => item.id === state.selectedId);
   if (!state.project || !frame || !annotation) {
@@ -350,15 +365,15 @@ async function refineSelectedWithSam31() {
 }
 
 async function findSimilarWithSam31() {
+  if (!state.aiEnabled) {
+    els.status.textContent = "请先开启 AI 辅助标注";
+    return;
+  }
   const frame = currentFrame();
   if (!state.project || !frame) return;
   if (state.dirty) await saveCurrentFrame();
   const selected = frame.annotations.find((item) => item.id === state.selectedId);
   const prompt = samPrompt(selected);
-  if (!prompt) {
-    els.status.textContent = "请先在 prompt 输入框填写英文/中文 label，或选择一个已有标注";
-    return;
-  }
   await runAiTask(async () => {
     const response = await fetch(`/api/projects/${state.project.id}/frames/${frame.id}/ai/sam31/find`, {
       method: "POST",
@@ -401,7 +416,7 @@ async function runAiTask(task) {
 }
 
 function samPrompt(annotation) {
-  return els.samPromptInput.value.trim() || annotation?.category || "";
+  return els.samPromptInput.value.trim() || annotation?.category || "object";
 }
 
 function renderLabelSummaries() {
@@ -708,6 +723,16 @@ function onKeyDown(event) {
   if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "f") {
     event.preventDefault();
     openLabelModal();
+    return;
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "j") {
+    event.preventDefault();
+    refineSelectedWithSam31();
+    return;
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
+    event.preventDefault();
+    findSimilarWithSam31();
     return;
   }
   if (["INPUT", "TEXTAREA", "SELECT"].includes(event.target?.tagName)) {

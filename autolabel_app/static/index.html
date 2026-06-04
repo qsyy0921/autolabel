@@ -11,7 +11,7 @@
       <header class="topbar">
         <div class="brand">
           <h1>Autolabel Manual</h1>
-          <p id="status">服务器只负责抽帧与存储，当前界面只保留手工标注。</p>
+          <p id="status">服务器负责抽帧、存储与可选 AI 辅助，人工确认后保存最终标注。</p>
         </div>
         <div class="stats">
           <div class="stat-card">
@@ -83,9 +83,13 @@
               <button id="saveButton" type="button" class="primary">保存当前帧</button>
             </div>
             <div class="tool-group ai-tools">
+              <label class="ai-toggle">
+                <input id="aiAssistToggle" type="checkbox" />
+                <span>AI 辅助标注</span>
+              </label>
               <input id="samPromptInput" type="text" placeholder="SAM3.1 prompt / label" />
-              <button id="samRefineButton" type="button">AI 精修当前对象</button>
-              <button id="samFindButton" type="button">AI 查找当前帧同类</button>
+              <button id="samRefineButton" type="button" title="Ctrl+J">AI 精修</button>
+              <button id="samFindButton" type="button" title="Ctrl+K">查找同类</button>
             </div>
           </div>
           <div class="canvas-wrap">
@@ -115,6 +119,18 @@
             <section class="label-section">
               <div class="section-title">本视频 Label 种类</div>
               <div id="videoLabelSummary" class="label-chip-list"></div>
+            </section>
+            <section class="label-section">
+              <div class="section-title">快捷键</div>
+              <div class="shortcut-list">
+                <span><kbd>A</kbd> 上一帧</span>
+                <span><kbd>S</kbd> 下一帧</span>
+                <span><kbd>Ctrl</kbd><kbd>F</kbd> 选择标签</span>
+                <span><kbd>Ctrl</kbd><kbd>J</kbd> AI 精修当前对象</span>
+                <span><kbd>Ctrl</kbd><kbd>K</kbd> AI 查找当前帧同类</span>
+                <span><kbd>Enter</kbd> 完成多边形</span>
+                <span><kbd>Esc</kbd> 取消当前操作</span>
+              </div>
             </section>
           </div>
           <div id="annotationCategoryPicker" class="annotation-category-picker"></div>
