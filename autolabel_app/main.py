@@ -31,6 +31,7 @@ STATIC_DIR = APP_DIR / "static"
 PROJECT_INDEX_DIR = ROOT_DIR / "data" / "projects"
 DOWNLOAD_DIR = ROOT_DIR / "data" / "downloads"
 MODEL_DIR = ROOT_DIR / "models"
+DEFAULT_FRAME_SAMPLER = "segmentation_diverse"
 
 app = FastAPI(title="Autolabel Web Demo")
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
@@ -77,12 +78,12 @@ async def create_project(
     video: UploadFile | None = File(None),
     project_name: str = Form(""),
     server_video_path: str = Form(""),
-    frame_sampler: Literal["interval", "keyframes", "hybrid", "segmentation_diverse"] = Form("segmentation_diverse"),
     interval_sec: float = Form(2.0),
     max_frames: int = Form(12),
 ):
     interval_sec = max(0.2, min(float(interval_sec), 60.0))
     max_frames = max(1, min(int(max_frames), 120))
+    frame_sampler = DEFAULT_FRAME_SAMPLER
     source_path, source_name, project_dir, storage_mode = prepare_project_source(video, project_name, server_video_path)
     project_id = project_dir.name
     frames_dir = project_dir / "frames"

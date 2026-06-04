@@ -30,7 +30,6 @@ const els = {
   projectNameInput: document.getElementById("projectNameInput"),
   videoInput: document.getElementById("videoInput"),
   serverVideoPathInput: document.getElementById("serverVideoPathInput"),
-  frameSampler: document.getElementById("frameSampler"),
   uploadButton: document.getElementById("uploadButton"),
   exportButton: document.getElementById("exportButton"),
   downloadButton: document.getElementById("downloadButton"),
@@ -235,7 +234,7 @@ function render() {
   renderLabelModal();
   els.frameCount.textContent = state.project?.frames.length || 0;
   els.annotationCount.textContent = currentFrame()?.annotations.length || 0;
-  els.samplerBadge.textContent = state.project?.frame_sampler || els.frameSampler.value;
+  els.samplerBadge.textContent = samplerLabel(state.project?.frame_sampler || "segmentation_diverse");
   els.selectedMeta.textContent = state.selectedId ? state.selectedId : "0 selected";
   renderAiControls();
 }
@@ -1018,6 +1017,12 @@ function circlePolygon(center, radius, sides = 24) {
 
 function shapeLabel(shapeType) {
   return { rectangle: "矩形", polygon: "多边形", circle: "圆形" }[shapeType || "rectangle"];
+}
+
+function samplerLabel(value) {
+  return {
+    segmentation_diverse: "平衡关键帧",
+  }[value] || "平衡关键帧";
 }
 
 function categoryColor(category) {
