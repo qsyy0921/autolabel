@@ -57,9 +57,9 @@
           </label>
 
           <div class="actions">
-            <button id="uploadButton" type="submit" class="primary">创建手工标注项目</button>
-            <button id="exportButton" type="button">导出 COCO</button>
-            <button id="downloadButton" type="button">下载结果</button>
+            <button id="uploadButton" type="submit" class="primary" title="创建项目并使用平衡关键帧抽帧">创建手工标注项目</button>
+            <button id="exportButton" type="button" title="导出当前项目的 COCO JSON">导出 COCO</button>
+            <button id="downloadButton" type="button" title="下载项目标注包">下载结果</button>
           </div>
         </form>
       </section>
@@ -72,31 +72,31 @@
           </div>
           <div class="toolbar">
             <div class="tool-group">
-              <button id="selectTool" type="button" class="active">选择</button>
-              <button id="rectTool" type="button">矩形</button>
-              <button id="polygonTool" type="button">多边形</button>
-              <button id="circleTool" type="button">圆形</button>
+              <button id="selectTool" type="button" class="active" title="选择/移动对象">选择</button>
+              <button id="rectTool" type="button" title="拖拽画矩形；画完后 Ctrl+F 选择标签">矩形</button>
+              <button id="polygonTool" type="button" title="单击添加多边形点；Enter 或双击完成；Esc 取消">多边形</button>
+              <button id="circleTool" type="button" title="拖拽画圆形；画完后 Ctrl+F 选择标签">圆形</button>
             </div>
             <div class="tool-group">
-              <button id="finishPolygonButton" type="button">完成多边形</button>
-              <button id="deleteButton" type="button">删除</button>
-              <button id="saveButton" type="button" class="primary">保存当前帧</button>
+              <button id="finishPolygonButton" type="button" title="Enter：完成当前多边形">完成多边形</button>
+              <button id="deleteButton" type="button" title="Delete / Backspace：删除选中对象">删除</button>
+              <button id="saveButton" type="button" class="primary" title="切换帧时会自动保存，也可以手动保存当前帧">保存当前帧</button>
             </div>
             <div class="tool-group ai-tools">
-              <label class="ai-toggle">
+              <label class="ai-toggle" title="开启后可用 Ctrl+J 精修、Ctrl+K 查找同类；关闭时保持纯手工标注">
                 <input id="aiAssistToggle" type="checkbox" />
                 <span>AI 辅助标注</span>
               </label>
-              <input id="samPromptInput" type="text" placeholder="SAM3.1 prompt / label" />
-              <button id="samRefineButton" type="button" title="Ctrl+J">AI 精修</button>
-              <button id="samFindButton" type="button" title="Ctrl+K">查找同类</button>
+              <input id="samPromptInput" type="text" placeholder="SAM3.1 prompt / label" title="可选：SAM3.1 文本提示；不填则使用当前对象 label；没有 label 时使用 object" />
+              <button id="samRefineButton" type="button" title="Ctrl+J：用 SAM3.1 精修当前选中对象的 mask">AI 精修</button>
+              <button id="samFindButton" type="button" title="Ctrl+K：用 SAM3.1 查找当前帧同类候选对象">查找同类</button>
             </div>
           </div>
           <div class="canvas-wrap">
-            <canvas id="canvas" width="960" height="540"></canvas>
+            <canvas id="canvas" width="960" height="540" title="画布：拖拽创建/移动对象；A/S 切帧；Ctrl+F 选标签；Ctrl+J 精修；Ctrl+K 查找同类；Esc 取消"></canvas>
             <div id="emptyState" class="empty-state">上传视频后开始抽帧并手工标注</div>
           </div>
-          <div id="frameList" class="frame-strip" aria-label="关键帧序列"></div>
+          <div id="frameList" class="frame-strip" aria-label="关键帧序列" title="关键帧序列：点击缩略图切换；A 上一帧，S 下一帧，切换时自动保存"></div>
         </section>
 
         <aside class="inspector-panel">
@@ -108,8 +108,8 @@
             <section class="label-section">
               <div class="section-title">定义 Label</div>
               <div class="label-create">
-                <input id="newLabelInput" type="text" placeholder="输入新 label 名称" />
-                <button id="addLabelButton" type="button">添加</button>
+                <input id="newLabelInput" type="text" placeholder="输入新 label 名称" title="输入 label 后按 Enter 或点击添加" />
+                <button id="addLabelButton" type="button" title="添加 label 到当前视频标签列表">添加</button>
               </div>
             </section>
             <section class="label-section">
@@ -123,13 +123,14 @@
             <section class="label-section">
               <div class="section-title">快捷键</div>
               <div class="shortcut-list">
-                <span><kbd>A</kbd> 上一帧</span>
-                <span><kbd>S</kbd> 下一帧</span>
-                <span><kbd>Ctrl</kbd><kbd>F</kbd> 选择标签</span>
-                <span><kbd>Ctrl</kbd><kbd>J</kbd> AI 精修当前对象</span>
-                <span><kbd>Ctrl</kbd><kbd>K</kbd> AI 查找当前帧同类</span>
-                <span><kbd>Enter</kbd> 完成多边形</span>
-                <span><kbd>Esc</kbd> 取消当前操作</span>
+                <span title="上一张关键帧；切换前自动保存当前帧"><kbd>A</kbd> 上一帧</span>
+                <span title="下一张关键帧；切换前自动保存当前帧"><kbd>S</kbd> 下一帧</span>
+                <span title="给当前选中对象选择或新增标签"><kbd>Ctrl</kbd><kbd>F</kbd> 选择标签</span>
+                <span title="需要先开启 AI 辅助标注；用 SAM3.1 精修当前对象"><kbd>Ctrl</kbd><kbd>J</kbd> AI 精修当前对象</span>
+                <span title="需要先开启 AI 辅助标注；用 SAM3.1 查找当前帧同类候选"><kbd>Ctrl</kbd><kbd>K</kbd> AI 查找当前帧同类</span>
+                <span title="多边形工具下完成当前多边形"><kbd>Enter</kbd> 完成多边形</span>
+                <span title="删除当前选中的标注对象"><kbd>Delete</kbd> 删除选中对象</span>
+                <span title="取消拖拽、多边形草稿或关闭标签弹窗"><kbd>Esc</kbd> 取消当前操作</span>
               </div>
             </section>
           </div>
@@ -147,8 +148,8 @@
         <div class="label-modal-body">
           <div id="labelModalOptions" class="modal-option-list"></div>
           <div class="label-create modal-create">
-            <input id="modalNewLabelInput" type="text" placeholder="新增 label 后直接应用到当前对象" />
-            <button id="modalAddLabelButton" type="button">新增并应用</button>
+            <input id="modalNewLabelInput" type="text" placeholder="新增 label 后直接应用到当前对象" title="输入后按 Enter：新增并应用到当前对象" />
+            <button id="modalAddLabelButton" type="button" title="新增 label 并应用到当前对象">新增并应用</button>
           </div>
         </div>
       </div>

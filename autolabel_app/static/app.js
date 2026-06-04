@@ -278,6 +278,7 @@ function renderFrames() {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `frame-item${index === state.frameIndex ? " active" : ""}`;
+    button.title = `切换到 ${frame.id}；A 上一帧，S 下一帧`;
     button.innerHTML = `
       <img src="/api/projects/${state.project.id}/frames/${frame.id}/image" alt="" />
       <span class="frame-meta">
@@ -746,6 +747,10 @@ function onKeyDown(event) {
   }
   if (event.key === "Enter" && state.mode === "polygon") {
     finishPolygonDraft();
+  }
+  if (event.key === "Delete" || event.key === "Backspace") {
+    event.preventDefault();
+    deleteSelectedAnnotation();
   }
   if (event.key.toLowerCase() === "a") {
     event.preventDefault();
