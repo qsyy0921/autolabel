@@ -4,6 +4,7 @@ import json
 import re
 import shutil
 import tempfile
+import uuid
 import zipfile
 from pathlib import Path
 from typing import Any, Literal
@@ -15,6 +16,12 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from autolabel_app.sam31_adapter import (
+    Sam31Unavailable,
+    find_similar_with_sam31,
+    refine_annotation_with_sam31,
+    sam31_available,
+)
 from autolabel_app.video_sampling import plan_frame_samples
 
 
@@ -46,6 +53,18 @@ class AnnotationUpdate(BaseModel):
 
 class LabelCatalogUpdate(BaseModel):
     labels: list[str]
+
+
+class Sam31RefineRequest(BaseModel):
+    annotation: AnnotationIn
+    prompt: str = ""
+
+
+class Sam31FindRequest(BaseModel):
+    prompt: str
+    category: str = "object"
+    max_results: int = 8
+    threshold: float = 0.35
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -140,6 +159,46 @@ def update_label_catalog(project_id: str, payload: LabelCatalogUpdate):
     return {"labels": project["label_catalog"]}
 
 
+@app.get("/api/ai/sam31/status")
+def sam31_status():
+    return {
+        "available": sam31_available(),
+        "model_dir": str(MODEL_DIR / "sam3"),
+    }
+
+
+@app.post("/api/projects/{project_id}/frames/{frame_id}/ai/sam31/refine")
+def sam31_refine(project_id: str, frame_id: str, payload: Sam31RefineRequest):
+    project = load_manifest(project_id)
+    frame, image_path = resolve_frame_and_image(project_id, project, frame_id)
+    annotation = normalize_annotation(payload.annotation.model_dump(), frame["width"], frame["height"])
+    category = annotation.get("category") or payload.prompt.strip() or "object"
+    try:
+        candidates = refine_annotation_with_sam31(image_path, annotation, category)
+    except (Sam31Unavailable, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail=f"SAM3.1 unavailable: {exc}") from exc
+    return {"annotations": assign_ai_annotation_ids(candidates)}
+
+
+@app.post("/api/projects/{project_id}/frames/{frame_id}/ai/sam31/find")
+def sam31_find(project_id: str, frame_id: str, payload: Sam31FindRequest):
+    project = load_manifest(project_id)
+    _, image_path = resolve_frame_and_image(project_id, project, frame_id)
+    max_results = max(1, min(int(payload.max_results), 24))
+    threshold = max(0.05, min(float(payload.threshold), 0.95))
+    try:
+        candidates = find_similar_with_sam31(
+            image_path,
+            prompt=payload.prompt,
+            category=payload.category or payload.prompt,
+            max_results=max_results,
+            threshold=threshold,
+        )
+    except (Sam31Unavailable, RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=503, detail=f"SAM3.1 unavailable: {exc}") from exc
+    return {"annotations": assign_ai_annotation_ids(candidates)}
+
+
 @app.get("/api/projects/{project_id}/export/coco")
 def export_coco(project_id: str):
     project = load_manifest(project_id)
@@ -203,6 +262,26 @@ def extract_frames(
         sampled_frames = rerank_diverse_frames(sampled_frames, max_frames)
     sampled_frames = normalize_selected_frames(sampled_frames[:max_frames], frames_dir)
     return sampled_frames
+
+
+def resolve_frame_and_image(project_id: str, project: dict, frame_id: str) -> tuple[dict, Path]:
+    frame = next((item for item in project["frames"] if item["id"] == frame_id), None)
+    if frame is None:
+        raise HTTPException(status_code=404, detail="Frame not found")
+    image_path = project_dir(project_id) / "frames" / frame["file_name"]
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail="Frame image not found")
+    return frame, image_path
+
+
+def assign_ai_annotation_ids(annotations: list[dict]) -> list[dict]:
+    return [
+        {
+            **annotation,
+            "id": annotation.get("id") or f"ai_{uuid.uuid4().hex[:10]}",
+        }
+        for annotation in annotations
+    ]
 
 
 def summarize_image(image: np.ndarray) -> dict[str, float]:

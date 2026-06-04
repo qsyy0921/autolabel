@@ -92,6 +92,11 @@
               <button id="deleteButton" type="button">删除</button>
               <button id="saveButton" type="button" class="primary">保存当前帧</button>
             </div>
+            <div class="tool-group ai-tools">
+              <input id="samPromptInput" type="text" placeholder="SAM3.1 prompt / label" />
+              <button id="samRefineButton" type="button">AI 精修当前对象</button>
+              <button id="samFindButton" type="button">AI 查找当前帧同类</button>
+            </div>
           </div>
           <div class="canvas-wrap">
             <canvas id="canvas" width="960" height="540"></canvas>

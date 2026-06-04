@@ -414,6 +414,7 @@ button.primary {
 
 .toolbar {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   gap: 10px;
   padding: 12px 14px;
@@ -424,7 +425,22 @@ button.primary {
 
 .tool-group {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.ai-tools {
+  flex: 1 1 420px;
+  justify-content: flex-end;
+}
+
+.ai-tools input {
+  width: min(280px, 100%);
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .canvas-wrap {

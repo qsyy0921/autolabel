@@ -9,6 +9,7 @@ const state = {
   polygonDraft: [],
   autosaveTimer: null,
   labelModalOpen: false,
+  aiBusy: false,
 };
 
 const CATEGORY_COLORS = [
@@ -60,6 +61,9 @@ const els = {
   finishPolygonButton: document.getElementById("finishPolygonButton"),
   deleteButton: document.getElementById("deleteButton"),
   saveButton: document.getElementById("saveButton"),
+  samPromptInput: document.getElementById("samPromptInput"),
+  samRefineButton: document.getElementById("samRefineButton"),
+  samFindButton: document.getElementById("samFindButton"),
 };
 
 const ctx = els.canvas.getContext("2d");
@@ -96,6 +100,8 @@ function boot() {
   els.finishPolygonButton.addEventListener("click", finishPolygonDraft);
   els.deleteButton.addEventListener("click", deleteSelectedAnnotation);
   els.saveButton.addEventListener("click", saveCurrentFrame);
+  els.samRefineButton.addEventListener("click", refineSelectedWithSam31);
+  els.samFindButton.addEventListener("click", findSimilarWithSam31);
   els.canvas.addEventListener("mousedown", onMouseDown);
   els.canvas.addEventListener("mousemove", onMouseMove);
   els.canvas.addEventListener("dblclick", onCanvasDoubleClick);
@@ -231,6 +237,19 @@ function render() {
   els.annotationCount.textContent = currentFrame()?.annotations.length || 0;
   els.samplerBadge.textContent = state.project?.frame_sampler || els.frameSampler.value;
   els.selectedMeta.textContent = state.selectedId ? state.selectedId : "0 selected";
+  renderAiControls();
+}
+
+function renderAiControls() {
+  const frame = currentFrame();
+  const annotation = frame?.annotations.find((item) => item.id === state.selectedId);
+  els.samRefineButton.disabled = !state.project || !annotation || state.aiBusy;
+  els.samFindButton.disabled = !state.project || state.aiBusy;
+  els.samRefineButton.textContent = state.aiBusy ? "AI 处理中" : "AI 精修当前对象";
+  els.samFindButton.textContent = state.aiBusy ? "AI 处理中" : "AI 查找当前帧同类";
+  if (annotation && !els.samPromptInput.value.trim()) {
+    els.samPromptInput.placeholder = annotation.category || "object";
+  }
 }
 
 function renderProjectMeta() {
@@ -281,6 +300,7 @@ function renderAnnotations() {
         <span>${shapeLabel(annotation.shape_type)}</span>
       </div>
       <div class="annotation-source">${escapeHtml(annotation.source || "manual")}</div>
+      ${annotation.score !== undefined && annotation.source?.startsWith("sam3.1") ? `<div class="annotation-source">score ${Number(annotation.score).toFixed(3)}</div>` : ""}
       <div class="fields">
         <label>类别<input data-field="category" type="text" value="${escapeAttr(annotation.category)}" /></label>
       </div>
@@ -294,6 +314,95 @@ function renderAnnotations() {
     });
     els.annotationList.appendChild(card);
   });
+}
+
+async function refineSelectedWithSam31() {
+  const frame = currentFrame();
+  const annotation = frame?.annotations.find((item) => item.id === state.selectedId);
+  if (!state.project || !frame || !annotation) {
+    els.status.textContent = "请先选择一个需要精修的对象";
+    return;
+  }
+  if (state.dirty) await saveCurrentFrame();
+  const prompt = samPrompt(annotation);
+  await runAiTask(async () => {
+    const response = await fetch(`/api/projects/${state.project.id}/frames/${frame.id}/ai/sam31/refine`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ annotation, prompt }),
+    });
+    if (!response.ok) throw new Error(await response.text());
+    const payload = await response.json();
+    const refined = payload.annotations?.[0];
+    if (!refined) {
+      els.status.textContent = "SAM3.1 没有返回可用 mask";
+      return;
+    }
+    const index = frame.annotations.findIndex((item) => item.id === annotation.id);
+    refined.id = annotation.id;
+    refined.category = annotation.category || refined.category || prompt || "object";
+    frame.annotations[index] = refined;
+    state.selectedId = refined.id;
+    mergeLabels([refined.category]);
+    markDirty();
+    els.status.textContent = `SAM3.1 已精修 ${refined.category}`;
+    render();
+  });
+}
+
+async function findSimilarWithSam31() {
+  const frame = currentFrame();
+  if (!state.project || !frame) return;
+  if (state.dirty) await saveCurrentFrame();
+  const selected = frame.annotations.find((item) => item.id === state.selectedId);
+  const prompt = samPrompt(selected);
+  if (!prompt) {
+    els.status.textContent = "请先在 prompt 输入框填写英文/中文 label，或选择一个已有标注";
+    return;
+  }
+  await runAiTask(async () => {
+    const response = await fetch(`/api/projects/${state.project.id}/frames/${frame.id}/ai/sam31/find`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt, category: selected?.category || prompt, max_results: 8, threshold: 0.28 }),
+    });
+    if (!response.ok) throw new Error(await response.text());
+    const payload = await response.json();
+    const incoming = payload.annotations || [];
+    const additions = incoming.filter((candidate) => !frame.annotations.some((item) => bboxIoU(item.bbox, candidate.bbox) > 0.75));
+    additions.forEach((candidate) => {
+      candidate.id = candidate.id || nextAnnotationId();
+      candidate.category = selected?.category || candidate.category || prompt;
+      candidate.source = candidate.source || "sam3.1_suggestion";
+      frame.annotations.push(candidate);
+    });
+    if (additions.length) {
+      state.selectedId = additions[0].id;
+      mergeLabels(additions.map((item) => item.category));
+      markDirty();
+    }
+    els.status.textContent = `SAM3.1 返回 ${incoming.length} 个候选，新增 ${additions.length} 个`;
+    render();
+  });
+}
+
+async function runAiTask(task) {
+  if (state.aiBusy) return;
+  state.aiBusy = true;
+  renderAiControls();
+  els.status.textContent = "SAM3.1 正在推理，首次加载模型会比较慢";
+  try {
+    await task();
+  } catch (error) {
+    els.status.textContent = `SAM3.1 失败：${cleanErrorMessage(error.message)}`;
+  } finally {
+    state.aiBusy = false;
+    renderAiControls();
+  }
+}
+
+function samPrompt(annotation) {
+  return els.samPromptInput.value.trim() || annotation?.category || "";
 }
 
 function renderLabelSummaries() {
@@ -854,6 +963,23 @@ function canvasPoint(event) {
 function pointInBBox(point, bbox) {
   const [x, y, w, h] = bbox;
   return point.x >= x && point.x <= x + w && point.y >= y && point.y <= y + h;
+}
+
+function bboxIoU(a, b) {
+  if (!a || !b) return 0;
+  const [ax, ay, aw, ah] = a.map(Number);
+  const [bx, by, bw, bh] = b.map(Number);
+  const ax2 = ax + aw;
+  const ay2 = ay + ah;
+  const bx2 = bx + bw;
+  const by2 = by + bh;
+  const ix1 = Math.max(ax, bx);
+  const iy1 = Math.max(ay, by);
+  const ix2 = Math.min(ax2, bx2);
+  const iy2 = Math.min(ay2, by2);
+  const intersection = Math.max(0, ix2 - ix1) * Math.max(0, iy2 - iy1);
+  const union = aw * ah + bw * bh - intersection;
+  return union > 0 ? intersection / union : 0;
 }
 
 function clampBBox(bbox, frame) {
