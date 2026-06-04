@@ -484,6 +484,10 @@ kbd {
   width: min(280px, 100%);
 }
 
+.ai-tools select {
+  width: min(180px, 100%);
+}
+
 .ai-status {
   min-height: 40px;
   display: inline-flex;

@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from autolabel_app.sam31_adapter import (
     Sam31Unavailable,
     find_similar_with_sam31,
+    list_sam31_devices,
     refine_annotation_with_sam31,
     sam31_available,
 )
@@ -59,6 +60,7 @@ class LabelCatalogUpdate(BaseModel):
 class Sam31RefineRequest(BaseModel):
     annotation: AnnotationIn
     prompt: str = ""
+    device: str = "cuda:0"
 
 
 class Sam31FindRequest(BaseModel):
@@ -66,6 +68,7 @@ class Sam31FindRequest(BaseModel):
     category: str = "object"
     max_results: int = 8
     threshold: float = 0.35
+    device: str = "cuda:0"
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -165,6 +168,7 @@ def sam31_status():
     return {
         "available": sam31_available(),
         "model_dir": str(MODEL_DIR / "sam3"),
+        "devices": list_sam31_devices(),
     }
 
 
@@ -175,7 +179,7 @@ def sam31_refine(project_id: str, frame_id: str, payload: Sam31RefineRequest):
     annotation = normalize_annotation(payload.annotation.model_dump(), frame["width"], frame["height"])
     category = annotation.get("category") or payload.prompt.strip() or "object"
     try:
-        candidates = refine_annotation_with_sam31(image_path, annotation, category)
+        candidates = refine_annotation_with_sam31(image_path, annotation, category, device=payload.device)
     except (Sam31Unavailable, RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=503, detail=f"SAM3.1 unavailable: {exc}") from exc
     return {"annotations": assign_ai_annotation_ids(candidates)}
@@ -194,6 +198,7 @@ def sam31_find(project_id: str, frame_id: str, payload: Sam31FindRequest):
             category=payload.category or payload.prompt,
             max_results=max_results,
             threshold=threshold,
+            device=payload.device,
         )
     except (Sam31Unavailable, RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=503, detail=f"SAM3.1 unavailable: {exc}") from exc

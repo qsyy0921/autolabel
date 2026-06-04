@@ -10,6 +10,7 @@ const state = {
   autosaveTimer: null,
   labelModalOpen: false,
   aiEnabled: false,
+  aiDevice: localStorage.getItem("autolabel.aiDevice") || "cuda:0",
   aiBusy: false,
 };
 
@@ -63,6 +64,7 @@ const els = {
   saveButton: document.getElementById("saveButton"),
   aiAssistToggle: document.getElementById("aiAssistToggle"),
   samPromptInput: document.getElementById("samPromptInput"),
+  aiDeviceSelect: document.getElementById("aiDeviceSelect"),
   samRefineButton: document.getElementById("samRefineButton"),
   samFindButton: document.getElementById("samFindButton"),
   aiStatus: document.getElementById("aiStatus"),
@@ -102,6 +104,11 @@ function boot() {
   els.finishPolygonButton.addEventListener("click", finishPolygonDraft);
   els.deleteButton.addEventListener("click", deleteSelectedAnnotation);
   els.saveButton.addEventListener("click", saveCurrentFrame);
+  els.aiDeviceSelect.addEventListener("change", () => {
+    state.aiDevice = els.aiDeviceSelect.value;
+    localStorage.setItem("autolabel.aiDevice", state.aiDevice);
+    setStatus(`AI 推理设备已切换到 ${selectedAiDeviceLabel()}`, selectedAiDeviceLabel());
+  });
   els.aiAssistToggle.addEventListener("change", () => {
     syncAiEnabledFromDom();
     setStatus(
@@ -119,7 +126,33 @@ function boot() {
   els.canvas.addEventListener("dblclick", onCanvasDoubleClick);
   window.addEventListener("mouseup", onMouseUp);
   window.addEventListener("keydown", onKeyDown);
+  loadAiDevices();
   render();
+}
+
+async function loadAiDevices() {
+  try {
+    const response = await fetch("/api/ai/sam31/status");
+    if (!response.ok) return;
+    const payload = await response.json();
+    const devices = payload.devices?.filter((item) => item.available) || [];
+    if (!devices.length) return;
+    els.aiDeviceSelect.innerHTML = "";
+    devices.forEach((device) => {
+      const option = document.createElement("option");
+      option.value = device.id;
+      option.textContent = device.label || device.id;
+      els.aiDeviceSelect.appendChild(option);
+    });
+    if (!devices.some((device) => device.id === state.aiDevice)) {
+      state.aiDevice = devices.find((device) => device.id !== "cpu")?.id || devices[0].id;
+      localStorage.setItem("autolabel.aiDevice", state.aiDevice);
+    }
+    els.aiDeviceSelect.value = state.aiDevice;
+    renderAiControls();
+  } catch {
+    // Device discovery is best-effort; the static defaults remain usable.
+  }
 }
 
 async function createProject(event) {
@@ -257,6 +290,8 @@ function renderAiControls() {
   const annotation = frame?.annotations.find((item) => item.id === state.selectedId);
   els.aiAssistToggle.checked = state.aiEnabled;
   els.samPromptInput.disabled = !state.aiEnabled || state.aiBusy;
+  els.aiDeviceSelect.disabled = state.aiBusy;
+  els.aiDeviceSelect.value = state.aiDevice;
   els.samRefineButton.disabled = !state.aiEnabled || !state.project || !annotation || state.aiBusy;
   els.samFindButton.disabled = !state.aiEnabled || !state.project || state.aiBusy;
   els.samRefineButton.textContent = state.aiBusy ? "AI 处理中" : "AI 精修";
@@ -268,7 +303,7 @@ function renderAiControls() {
   } else if (state.aiBusy) {
     els.aiStatus.textContent = "推理中";
   } else {
-    els.aiStatus.textContent = annotation ? "可精修/查找" : "可查找同类";
+    els.aiStatus.textContent = annotation ? `${selectedAiDeviceLabel()} 可用` : `${selectedAiDeviceLabel()} 可查找`;
   }
   if (annotation && !els.samPromptInput.value.trim()) {
     els.samPromptInput.placeholder = annotation.category || "object";
@@ -359,7 +394,7 @@ async function refineSelectedWithSam31() {
     const response = await fetch(`/api/projects/${state.project.id}/frames/${frame.id}/ai/sam31/refine`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ annotation, prompt }),
+      body: JSON.stringify({ annotation, prompt, device: state.aiDevice }),
     });
     if (!response.ok) throw new Error(await response.text());
     const payload = await response.json();
@@ -377,7 +412,7 @@ async function refineSelectedWithSam31() {
     markDirty();
     setStatus(`SAM3.1 已精修 ${refined.category}`, "精修完成");
     render();
-  }, "SAM3.1 正在精修当前对象，首次加载模型会比较慢");
+  }, `SAM3.1 正在用 ${selectedAiDeviceLabel()} 精修当前对象，首次加载模型会比较慢`);
 }
 
 async function findSimilarWithSam31() {
@@ -396,7 +431,7 @@ async function findSimilarWithSam31() {
     const response = await fetch(`/api/projects/${state.project.id}/frames/${frame.id}/ai/sam31/find`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt, category: selected?.category || prompt, max_results: 8, threshold: 0.28 }),
+      body: JSON.stringify({ prompt, category: selected?.category || prompt, max_results: 8, threshold: 0.28, device: state.aiDevice }),
     });
     if (!response.ok) throw new Error(await response.text());
     const payload = await response.json();
@@ -415,7 +450,7 @@ async function findSimilarWithSam31() {
     }
     setStatus(`SAM3.1 返回 ${incoming.length} 个候选，新增 ${additions.length} 个`, `新增 ${additions.length}`);
     render();
-  }, "SAM3.1 正在查找当前帧同类，文本提示越准确结果越稳");
+  }, `SAM3.1 正在用 ${selectedAiDeviceLabel()} 查找当前帧同类，文本提示越准确结果越稳`);
 }
 
 async function runAiTask(task, message) {
@@ -446,6 +481,10 @@ function setStatus(message, aiMessage) {
   if (aiMessage) {
     els.aiStatus.textContent = aiMessage;
   }
+}
+
+function selectedAiDeviceLabel() {
+  return els.aiDeviceSelect.selectedOptions[0]?.textContent || state.aiDevice;
 }
 
 function renderLabelSummaries() {

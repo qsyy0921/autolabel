@@ -24,8 +24,53 @@ def sam31_available() -> bool:
     return SAM3_REPO.exists() and SAM31_PT.exists()
 
 
-@lru_cache(maxsize=1)
-def get_sam31_processor() -> Any:
+def list_sam31_devices() -> list[dict[str, Any]]:
+    devices = [{"id": "cpu", "label": "CPU", "available": True}]
+    try:
+        import torch
+    except ImportError:
+        return devices
+    if not torch.cuda.is_available():
+        return devices
+    for index in range(torch.cuda.device_count()):
+        devices.append(
+            {
+                "id": f"cuda:{index}",
+                "label": f"GPU {index}: {torch.cuda.get_device_name(index)}",
+                "available": True,
+            }
+        )
+    return devices
+
+
+def normalize_sam31_device(device: str | None = None) -> str:
+    requested = (device or os.environ.get("AUTOLABEL_SAM31_DEVICE", "cuda:0")).strip().lower()
+    if requested in {"", "auto"}:
+        requested = os.environ.get("AUTOLABEL_SAM31_DEVICE", "cuda:0").strip().lower()
+    if requested == "cuda":
+        requested = "cuda:0"
+    if requested == "cpu":
+        return requested
+
+    if not requested.startswith("cuda:"):
+        raise Sam31Unavailable(f"Unsupported device '{requested}'. Use cpu, cuda, or cuda:N.")
+
+    try:
+        index = int(requested.split(":", 1)[1])
+    except ValueError as exc:
+        raise Sam31Unavailable(f"Unsupported CUDA device '{requested}'. Use cuda:N.") from exc
+
+    import torch
+
+    if not torch.cuda.is_available():
+        raise Sam31Unavailable("CUDA is not available on this server")
+    if index < 0 or index >= torch.cuda.device_count():
+        raise Sam31Unavailable(f"CUDA device {index} is not available; found {torch.cuda.device_count()} GPU(s)")
+    return f"cuda:{index}"
+
+
+@lru_cache(maxsize=4)
+def get_sam31_processor(device: str) -> Any:
     if not sam31_available():
         raise Sam31Unavailable(f"SAM3.1 repo or checkpoint is missing under {ROOT_DIR / 'models' / 'sam3'}")
 
@@ -36,13 +81,15 @@ def get_sam31_processor() -> Any:
     from sam3.model.sam3_image_processor import Sam3Processor
     from sam3.model_builder import build_sam3_image_model
 
-    if not torch.cuda.is_available():
-        raise Sam31Unavailable("CUDA is not available; SAM3.1 image inference is too heavy for this CPU-only path")
-
-    device = os.environ.get("AUTOLABEL_SAM31_DEVICE", "cuda:0")
+    device = normalize_sam31_device(device)
+    if device.startswith("cuda:"):
+        torch.cuda.set_device(device)
+        model_device = "cuda"
+    else:
+        model_device = device
     model = build_sam3_image_model(
         checkpoint_path=str(SAM31_PT),
-        device=device,
+        device=model_device,
         load_from_HF=False,
         enable_segmentation=True,
         enable_inst_interactivity=False,
@@ -51,10 +98,15 @@ def get_sam31_processor() -> Any:
     return Sam3Processor(model, device=device, confidence_threshold=float(os.environ.get("AUTOLABEL_SAM31_THRESHOLD", "0.35")))
 
 
-def refine_annotation_with_sam31(image_path: Path, annotation: dict[str, Any], category: str) -> list[dict[str, Any]]:
+def refine_annotation_with_sam31(
+    image_path: Path,
+    annotation: dict[str, Any],
+    category: str,
+    device: str | None = None,
+) -> list[dict[str, Any]]:
     image = Image.open(image_path).convert("RGB")
     width, height = image.size
-    processor = get_sam31_processor()
+    processor = get_sam31_processor(normalize_sam31_device(device))
     state = processor.set_image(image)
     prompt_box = pixel_bbox_to_normalized_cxcywh(annotation.get("bbox") or [0, 0, width, height], width, height)
     output = processor.add_geometric_prompt(prompt_box, True, state)
@@ -72,12 +124,13 @@ def find_similar_with_sam31(
     category: str,
     max_results: int = 12,
     threshold: float | None = None,
+    device: str | None = None,
 ) -> list[dict[str, Any]]:
     if not prompt.strip():
         raise ValueError("SAM3.1 prompt is empty")
 
     image = Image.open(image_path).convert("RGB")
-    processor = get_sam31_processor()
+    processor = get_sam31_processor(normalize_sam31_device(device))
     old_threshold = processor.confidence_threshold
     if threshold is not None:
         processor.confidence_threshold = float(threshold)
