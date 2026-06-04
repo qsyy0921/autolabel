@@ -16,32 +16,83 @@
 
 当前阶段先保留人工标注闭环，模型只用于关键帧筛选的候选能力；YOLO/SAM/DINO 等自动标注入口后续再接入。
 
-### 启动
+### 服务器启动
 
-当前服务器上已创建 conda 环境：
+在服务器 `mfl@111.0.130.56` 上进入项目目录：
+
+```bash
+cd /home/expand_disk/code_repository/mfl/yong_task/autolabel
+```
+
+当前服务器上已创建本项目专用 conda 环境：
 
 ```bash
 source /home/panjunhao/miniconda3/etc/profile.d/conda.sh
 conda activate /home/expand_disk/code_repository/mfl/yong_task/autolabel/.conda/autolabel
 ```
 
-启动服务：
+推荐用 `tmux` 在后台启动服务：
 
 ```bash
-uvicorn autolabel_app.main:app --host 127.0.0.1 --port 42873
+tmux new-session -d -s autolabel_web -c /home/expand_disk/code_repository/mfl/yong_task/autolabel \
+  'source /home/panjunhao/miniconda3/etc/profile.d/conda.sh && \
+   conda activate /home/expand_disk/code_repository/mfl/yong_task/autolabel/.conda/autolabel && \
+   uvicorn autolabel_app.main:app --host 127.0.0.1 --port 42873 2>&1 | tee -a autolabel_web_42873.log'
 ```
 
-本地电脑建立 SSH 隧道：
+如果会话已经存在，先停止旧服务：
+
+```bash
+tmux kill-session -t autolabel_web
+```
+
+检查服务是否启动：
+
+```bash
+ss -ltnp | grep 42873
+curl http://127.0.0.1:42873/
+```
+
+查看日志：
+
+```bash
+tail -f /home/expand_disk/code_repository/mfl/yong_task/autolabel/autolabel_web_42873.log
+```
+
+### 其他电脑连接
+
+其他电脑不直接访问服务器公网 HTTP 端口，而是在本地终端建立 SSH 隧道。
+
+在需要使用标注界面的电脑上运行：
 
 ```bash
 ssh -p 10022 -N -L 42873:127.0.0.1:42873 mfl@111.0.130.56
 ```
 
-然后本地浏览器访问：
+保持这个 SSH 窗口不要关闭，然后在这台电脑的浏览器访问：
 
 ```text
 http://127.0.0.1:42873
 ```
+
+如果本地电脑的 `42873` 已被占用，可以换成本地其他端口，例如：
+
+```bash
+ssh -p 10022 -N -L 43073:127.0.0.1:42873 mfl@111.0.130.56
+```
+
+对应浏览器访问：
+
+```text
+http://127.0.0.1:43073
+```
+
+说明：
+
+- `-p 10022` 是 SSH 登录服务器的端口。
+- `-L 本地端口:127.0.0.1:服务器服务端口` 表示把服务器上的标注服务映射到本地电脑。
+- 标注服务只绑定服务器 `127.0.0.1`，外部用户必须通过 SSH 隧道访问。
+- 视频、模型、项目数据都保存在服务器；本地电脑只负责浏览器交互。
 
 ### 当前标注能力
 

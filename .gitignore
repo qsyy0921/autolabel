@@ -2,6 +2,7 @@
 data/
 outputs/
 exports/
+autolabel_web_*.log
 
 # Server-local model assets. Keep only our catalog/notes in Git.
 models/**
