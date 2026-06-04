@@ -1,0 +1,108 @@
+# Model catalog for server-local assets.
+# The current web UI is manual-first. Entries here document future assisted
+# labeling and keyframe-sampling backends; weights are not committed to Git.
+
+- id: yolo26_detect_n
+  display_name: YOLO26 Nano Detect
+  family: yolo26
+  type: detection
+  backend: ultralytics_yolo
+  local_path: models/detection/yolo26n.pt
+  role: assisted_labeling
+
+- id: yolo26_detect_m
+  display_name: YOLO26 Medium Detect
+  family: yolo26
+  type: detection
+  backend: ultralytics_yolo
+  local_path: models/detection/yolo26m.pt
+  role: assisted_labeling
+
+- id: yolo26_detect_x
+  display_name: YOLO26 XLarge Detect
+  family: yolo26
+  type: detection
+  backend: ultralytics_yolo
+  local_path: models/detection/yolo26x.pt
+  role: assisted_labeling
+
+- id: yolo26_seg_n
+  display_name: YOLO26 Nano Segmentation
+  family: yolo26
+  type: instance_segmentation
+  backend: ultralytics_yolo
+  local_path: models/segmentation/yolo26n-seg.pt
+  role: keyframe_sampling
+
+- id: yolo26_seg_m
+  display_name: YOLO26 Medium Segmentation
+  family: yolo26
+  type: instance_segmentation
+  backend: ultralytics_yolo
+  local_path: models/segmentation/yolo26m-seg.pt
+  role: assisted_labeling
+
+- id: yolo26_seg_x
+  display_name: YOLO26 XLarge Segmentation
+  family: yolo26
+  type: instance_segmentation
+  backend: ultralytics_yolo
+  local_path: models/segmentation/yolo26x-seg.pt
+  role: assisted_labeling
+
+- id: sam21_large
+  display_name: SAM 2.1 Large
+  family: sam
+  type: prompt_segmentation
+  backend: ultralytics_sam
+  local_path: models/sam/sam2.1_l.pt
+  role: assisted_labeling
+
+- id: sam3_base
+  display_name: SAM 3
+  family: sam3
+  type: concept_segmentation
+  backend: meta_sam3
+  local_path: models/sam3/checkpoints/sam3/sam3.safetensors
+  role: assisted_labeling
+
+- id: sam31_multiplex
+  display_name: SAM 3.1 Multiplex
+  family: sam3
+  type: concept_segmentation
+  backend: meta_sam3
+  local_path: models/sam3/checkpoints/sam3.1/sam3.1_multiplex.pt
+  role: assisted_labeling
+
+- id: sam31_multiplex_fp16
+  display_name: SAM 3.1 Multiplex FP16
+  family: sam3
+  type: concept_segmentation
+  backend: meta_sam3
+  local_path: models/sam3/checkpoints/sam3.1-fp16/sam3.1_multiplex_fp16.safetensors
+  role: assisted_labeling
+
+- id: dinov2_vits14
+  display_name: DINOv2 ViT-S/14
+  family: dinov2
+  type: embedding
+  backend: torch_hub
+  local_path: models/embedding/dino/checkpoints/dinov2_vits14_pretrain.pth
+  role: keyframe_sampling
+
+- id: transnetv2
+  display_name: TransNetV2
+  family: transnetv2
+  type: shot_boundary
+  backend: pytorch_or_tensorflow
+  local_path: models/keyframe/transnetv2/transnetv2-pytorch-weights.pth
+  fallback_path: models/keyframe/transnetv2/tf_saved_model
+  role: keyframe_sampling
+
+- id: locateanything_3b
+  display_name: LocateAnything-3B
+  family: locateanything
+  type: grounding
+  backend: transformers
+  local_path: models/grounding/locateanything-3b
+  role: assisted_labeling

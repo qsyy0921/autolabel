@@ -1,0 +1,28 @@
+# Runtime data
+data/
+outputs/
+exports/
+
+# Server-local model assets. Keep only our catalog/notes in Git.
+models/**
+!models/
+!models/README.md
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# Local env
+.env
+.conda/
+.venv/
+venv/
+
+# Local experiments and upstream checkouts
+.autolabel_flow_label_test.json
+.manual_test.json
+demo/
+third_party/
+tmp/

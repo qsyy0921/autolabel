@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Autolabel Manual Labeling</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <h1>Autolabel Manual</h1>
+          <p id="status">服务器只负责抽帧与存储，当前界面只保留手工标注。</p>
+        </div>
+        <div class="stats">
+          <div class="stat-card">
+            <span>Frames</span>
+            <strong id="frameCount">0</strong>
+          </div>
+          <div class="stat-card">
+            <span>Annotations</span>
+            <strong id="annotationCount">0</strong>
+          </div>
+          <div class="stat-card">
+            <span>Sampler</span>
+            <strong id="samplerBadge">-</strong>
+          </div>
+        </div>
+      </header>
+
+      <section class="control-band">
+        <form id="uploadForm" class="upload-form manual">
+          <label class="field">
+            <span>项目名</span>
+            <input id="projectNameInput" name="project_name" type="text" placeholder="例如 dinggan-seg-v1" />
+          </label>
+
+          <label class="field field-file">
+            <span>视频</span>
+            <input id="videoInput" name="video" type="file" accept="video/*" />
+          </label>
+
+          <label class="field field-wide">
+            <span>服务器视频路径</span>
+            <input id="serverVideoPathInput" name="server_video_path" type="text" placeholder="/home/.../video.mp4" />
+          </label>
+
+          <label class="field">
+            <span>抽帧策略</span>
+            <select id="frameSampler" name="frame_sampler">
+              <option value="segmentation_diverse">分割增广</option>
+              <option value="hybrid">关键帧混合</option>
+              <option value="keyframes">关键帧优先</option>
+              <option value="interval">均匀抽帧</option>
+            </select>
+          </label>
+
+          <label class="field">
+            <span>间隔秒</span>
+            <input id="intervalInput" name="interval_sec" type="number" value="2" min="0.2" step="0.2" />
+          </label>
+
+          <label class="field">
+            <span>最多帧</span>
+            <input id="maxFramesInput" name="max_frames" type="number" value="12" min="1" max="120" />
+          </label>
+
+          <div class="actions">
+            <button id="uploadButton" type="submit" class="primary">创建手工标注项目</button>
+            <button id="exportButton" type="button">导出 COCO</button>
+            <button id="downloadButton" type="button">下载结果</button>
+          </div>
+        </form>
+      </section>
+
+      <main class="workspace">
+        <section class="review-panel">
+          <div class="panel-head review-head">
+            <h2>关键帧</h2>
+            <span id="projectMeta">等待项目</span>
+          </div>
+          <div class="toolbar">
+            <div class="tool-group">
+              <button id="selectTool" type="button" class="active">选择</button>
+              <button id="rectTool" type="button">矩形</button>
+              <button id="polygonTool" type="button">多边形</button>
+              <button id="circleTool" type="button">圆形</button>
+            </div>
+            <div class="tool-group">
+              <button id="finishPolygonButton" type="button">完成多边形</button>
+              <button id="deleteButton" type="button">删除</button>
+              <button id="saveButton" type="button" class="primary">保存当前帧</button>
+            </div>
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="canvas" width="960" height="540"></canvas>
+            <div id="emptyState" class="empty-state">上传视频后开始抽帧并手工标注</div>
+          </div>
+          <div id="frameList" class="frame-strip" aria-label="关键帧序列"></div>
+        </section>
+
+        <aside class="inspector-panel">
+          <div class="panel-head">
+            <h2>标注检查</h2>
+            <span id="selectedMeta">0 selected</span>
+          </div>
+          <div class="label-overview">
+            <section class="label-section">
+              <div class="section-title">定义 Label</div>
+              <div class="label-create">
+                <input id="newLabelInput" type="text" placeholder="输入新 label 名称" />
+                <button id="addLabelButton" type="button">添加</button>
+              </div>
+            </section>
+            <section class="label-section">
+              <div class="section-title">本帧已标注 Label</div>
+              <div id="frameLabelSummary" class="label-chip-list"></div>
+            </section>
+            <section class="label-section">
+              <div class="section-title">本视频 Label 种类</div>
+              <div id="videoLabelSummary" class="label-chip-list"></div>
+            </section>
+          </div>
+          <div id="annotationCategoryPicker" class="annotation-category-picker"></div>
+          <div id="annotationList" class="annotation-list"></div>
+        </aside>
+      </main>
+    </div>
+    <div id="labelModal" class="modal-backdrop hidden" aria-hidden="true">
+      <div class="label-modal" role="dialog" aria-modal="true" aria-labelledby="labelModalTitle">
+        <div class="panel-head modal-head">
+          <h2 id="labelModalTitle">选择标签种类</h2>
+          <span id="labelModalMeta">Ctrl+F</span>
+        </div>
+        <div class="label-modal-body">
+          <div id="labelModalOptions" class="modal-option-list"></div>
+          <div class="label-create modal-create">
+            <input id="modalNewLabelInput" type="text" placeholder="新增 label 后直接应用到当前对象" />
+            <button id="modalAddLabelButton" type="button">新增并应用</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script src="/static/app.js"></script>
+  </body>
+</html>

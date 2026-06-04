@@ -2,21 +2,99 @@
 
 视频自动标注平台设计与原型项目。
 
+## 当前可运行 Demo
+
+当前仓库提供一个 SSH 隧道 + 浏览器 Web 界面的手工标注 demo。服务器负责视频存储、抽帧和后续模型推理，本地电脑只需要浏览器访问转发端口。
+
+```text
+视频/服务器路径
+-> 服务器抽取候选帧
+-> 浏览器手工标注矩形、多边形、圆形
+-> 每帧 JSON + 项目 manifest
+-> 下载 COCO JSON 或项目标注包
+```
+
+当前阶段先保留人工标注闭环，模型只用于关键帧筛选的候选能力；YOLO/SAM/DINO 等自动标注入口后续再接入。
+
+### 启动
+
+当前服务器上已创建 conda 环境：
+
+```bash
+source /home/panjunhao/miniconda3/etc/profile.d/conda.sh
+conda activate /home/expand_disk/code_repository/mfl/yong_task/autolabel/.conda/autolabel
+```
+
+启动服务：
+
+```bash
+uvicorn autolabel_app.main:app --host 127.0.0.1 --port 42873
+```
+
+本地电脑建立 SSH 隧道：
+
+```bash
+ssh -p 10022 -N -L 42873:127.0.0.1:42873 mfl@111.0.130.56
+```
+
+然后本地浏览器访问：
+
+```text
+http://127.0.0.1:42873
+```
+
+### 当前标注能力
+
+- 支持手动创建矩形、多边形、圆形标注。
+- 支持项目命名，视频可上传，也可直接引用服务器路径。
+- 支持 `A` / `S` 循环切换上一帧、下一帧，切换时自动保存当前帧。
+- 支持 `Ctrl+F` 给当前对象选择或新增 label。
+- 每个类别使用稳定颜色，同一视频内标签种类会自动汇总。
+- 每张图一个 JSON，项目目录内同时保存 `manifest.json`、帧图、标注 JSON 和可下载导出包。
+
+### 关键帧筛选
+
+当前实现以人工标注为主，抽帧支持多种候选策略。面向目标分割项目，推荐使用 `segmentation_diverse`：
+
+```text
+TransNetV2 候选镜头/变化帧
+-> DINOv2 视觉特征去重和多样性
+-> YOLO26-seg 估计对象数量、尺度、拥挤度和边界复杂度
+-> 选出更适合人工标注的关键帧
+```
+
+如果模型文件不可用，会自动退回到轻量的帧差、间隔帧和图像统计。
+
+### 目录约定
+
+```text
+autolabel_app/       FastAPI + 浏览器标注界面
+configs/             模型目录清单和后续模型接入配置
+docs/                设计文档
+models/README.md     服务器本地模型说明，Git 只提交这份说明
+data/projects/       项目数据、帧图片、每帧标注 JSON
+data/downloads/      导出的标注包
+assets/              README 和设计图资源
+```
+
+模型权重、tokenizer、第三方模型代码和本地 conda 环境只保存在服务器，不提交到 GitHub。模型目录说明见 [models/README.md](models/README.md)。
+
+更详细设计见 [docs/mvp-demo-design.md](docs/mvp-demo-design.md) 和 [docs/keyframe-sampling-design.md](docs/keyframe-sampling-design.md)。
+
 ![视频自动标注平台总体架构](assets/video-auto-label-architecture-v2.png)
 
-当前阶段范围收敛为：
+当前代码阶段范围收敛为：
 
 - 输入数据为视频
-- 自动标注任务优先支持：
-  - 目标检测
-  - 实例分割
+- 标注任务优先支持目标分割场景下的人工精标
+- 抽帧优先选择差异大、复杂度高、适合扩充数据集的关键帧
 - 平台形态为：
-  - 模型预打标
-  - 人工复核
-  - 质量闭环
-  - 可持续自进化
+  - SSH 隧道访问
+  - 浏览器手工标注
+  - 服务器保存项目数据
+  - 后续接入模型辅助标注
 
-本文档同时作为项目总览和第一阶段架构设计说明。
+本文档同时作为项目总览和长期架构设计说明；当前可运行能力以上面的 Demo 说明为准。
 
 ## 1. 目标
 
@@ -29,9 +107,9 @@
 
 第一阶段定位：
 
-- 跑通视频目标检测自动标注工作流
-- 跑通视频实例分割自动标注工作流
-- 为后续自进化保留稳定的数据结构和系统边界
+- 跑通视频抽帧到人工标注的稳定闭环
+- 支持目标分割项目需要的矩形、多边形、圆形标注
+- 为后续 YOLO/SAM/DINO 等模型辅助能力保留稳定的数据结构和系统边界
 
 ## 2. 设计原则
 
