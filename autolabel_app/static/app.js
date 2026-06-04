@@ -65,6 +65,7 @@ const els = {
   samPromptInput: document.getElementById("samPromptInput"),
   samRefineButton: document.getElementById("samRefineButton"),
   samFindButton: document.getElementById("samFindButton"),
+  aiStatus: document.getElementById("aiStatus"),
 };
 
 const ctx = els.canvas.getContext("2d");
@@ -102,10 +103,13 @@ function boot() {
   els.deleteButton.addEventListener("click", deleteSelectedAnnotation);
   els.saveButton.addEventListener("click", saveCurrentFrame);
   els.aiAssistToggle.addEventListener("change", () => {
-    state.aiEnabled = els.aiAssistToggle.checked;
-    els.status.textContent = state.aiEnabled
-      ? "AI 辅助标注已开启：Ctrl+J 精修当前对象，Ctrl+K 查找当前帧同类"
-      : "AI 辅助标注已关闭，当前为纯手工标注";
+    syncAiEnabledFromDom();
+    setStatus(
+      state.aiEnabled
+        ? "AI 辅助标注已开启：Ctrl+J 精修当前对象，Ctrl+K 查找当前帧同类"
+        : "AI 辅助标注已关闭，当前为纯手工标注",
+      state.aiEnabled ? "AI 已开启" : "未开启",
+    );
     render();
   });
   els.samRefineButton.addEventListener("click", refineSelectedWithSam31);
@@ -257,6 +261,15 @@ function renderAiControls() {
   els.samFindButton.disabled = !state.aiEnabled || !state.project || state.aiBusy;
   els.samRefineButton.textContent = state.aiBusy ? "AI 处理中" : "AI 精修";
   els.samFindButton.textContent = state.aiBusy ? "AI 处理中" : "查找同类";
+  if (!state.aiEnabled) {
+    els.aiStatus.textContent = "未开启";
+  } else if (!state.project) {
+    els.aiStatus.textContent = "等待项目";
+  } else if (state.aiBusy) {
+    els.aiStatus.textContent = "推理中";
+  } else {
+    els.aiStatus.textContent = annotation ? "可精修/查找" : "可查找同类";
+  }
   if (annotation && !els.samPromptInput.value.trim()) {
     els.samPromptInput.placeholder = annotation.category || "object";
   }
@@ -328,16 +341,18 @@ function renderAnnotations() {
 }
 
 async function refineSelectedWithSam31() {
+  syncAiEnabledFromDom();
   if (!state.aiEnabled) {
-    els.status.textContent = "请先开启 AI 辅助标注";
+    setStatus("请先开启 AI 辅助标注", "未开启");
     return;
   }
   const frame = currentFrame();
   const annotation = frame?.annotations.find((item) => item.id === state.selectedId);
   if (!state.project || !frame || !annotation) {
-    els.status.textContent = "请先选择一个需要精修的对象";
+    setStatus("请先选择一个需要精修的对象", "未选对象");
     return;
   }
+  setStatus("已触发 SAM3.1 精修，正在准备当前帧", "准备精修");
   if (state.dirty) await saveCurrentFrame();
   const prompt = samPrompt(annotation);
   await runAiTask(async () => {
@@ -350,7 +365,7 @@ async function refineSelectedWithSam31() {
     const payload = await response.json();
     const refined = payload.annotations?.[0];
     if (!refined) {
-      els.status.textContent = "SAM3.1 没有返回可用 mask";
+      setStatus("SAM3.1 没有返回可用 mask", "无结果");
       return;
     }
     const index = frame.annotations.findIndex((item) => item.id === annotation.id);
@@ -360,18 +375,20 @@ async function refineSelectedWithSam31() {
     state.selectedId = refined.id;
     mergeLabels([refined.category]);
     markDirty();
-    els.status.textContent = `SAM3.1 已精修 ${refined.category}`;
+    setStatus(`SAM3.1 已精修 ${refined.category}`, "精修完成");
     render();
-  });
+  }, "SAM3.1 正在精修当前对象，首次加载模型会比较慢");
 }
 
 async function findSimilarWithSam31() {
+  syncAiEnabledFromDom();
   if (!state.aiEnabled) {
-    els.status.textContent = "请先开启 AI 辅助标注";
+    setStatus("请先开启 AI 辅助标注", "未开启");
     return;
   }
   const frame = currentFrame();
   if (!state.project || !frame) return;
+  setStatus("已触发 SAM3.1 查找同类，正在准备当前帧", "准备查找");
   if (state.dirty) await saveCurrentFrame();
   const selected = frame.annotations.find((item) => item.id === state.selectedId);
   const prompt = samPrompt(selected);
@@ -396,20 +413,20 @@ async function findSimilarWithSam31() {
       mergeLabels(additions.map((item) => item.category));
       markDirty();
     }
-    els.status.textContent = `SAM3.1 返回 ${incoming.length} 个候选，新增 ${additions.length} 个`;
+    setStatus(`SAM3.1 返回 ${incoming.length} 个候选，新增 ${additions.length} 个`, `新增 ${additions.length}`);
     render();
-  });
+  }, "SAM3.1 正在查找当前帧同类，文本提示越准确结果越稳");
 }
 
-async function runAiTask(task) {
+async function runAiTask(task, message) {
   if (state.aiBusy) return;
   state.aiBusy = true;
   renderAiControls();
-  els.status.textContent = "SAM3.1 正在推理，首次加载模型会比较慢";
+  setStatus(message || "SAM3.1 正在推理，首次加载模型会比较慢", "推理中");
   try {
     await task();
   } catch (error) {
-    els.status.textContent = `SAM3.1 失败：${cleanErrorMessage(error.message)}`;
+    setStatus(`SAM3.1 失败：${cleanErrorMessage(error.message)}`, "失败");
   } finally {
     state.aiBusy = false;
     renderAiControls();
@@ -418,6 +435,17 @@ async function runAiTask(task) {
 
 function samPrompt(annotation) {
   return els.samPromptInput.value.trim() || annotation?.category || "object";
+}
+
+function syncAiEnabledFromDom() {
+  state.aiEnabled = Boolean(els.aiAssistToggle.checked);
+}
+
+function setStatus(message, aiMessage) {
+  els.status.textContent = message;
+  if (aiMessage) {
+    els.aiStatus.textContent = aiMessage;
+  }
 }
 
 function renderLabelSummaries() {

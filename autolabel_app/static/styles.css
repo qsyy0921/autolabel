@@ -484,6 +484,16 @@ kbd {
   width: min(280px, 100%);
 }
 
+.ai-status {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  max-width: 160px;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
 button:disabled {
   cursor: not-allowed;
   opacity: 0.55;

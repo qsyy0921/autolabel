@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Autolabel Manual Labeling</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260604-ai-status" />
   </head>
   <body>
     <div class="app-shell">
@@ -90,6 +90,7 @@
               <input id="samPromptInput" type="text" placeholder="SAM3.1 prompt / label" title="可选：SAM3.1 文本提示；不填则使用当前对象 label；没有 label 时使用 object" />
               <button id="samRefineButton" type="button" title="Ctrl+J：用 SAM3.1 精修当前选中对象的 mask">AI 精修</button>
               <button id="samFindButton" type="button" title="Ctrl+K：用 SAM3.1 查找当前帧同类候选对象">查找同类</button>
+              <span id="aiStatus" class="ai-status" title="AI 请求状态会显示在这里">未开启</span>
             </div>
           </div>
           <div class="canvas-wrap">
@@ -154,6 +155,6 @@
         </div>
       </div>
     </div>
-    <script src="/static/app.js"></script>
+    <script src="/static/app.js?v=20260604-ai-status"></script>
   </body>
 </html>
