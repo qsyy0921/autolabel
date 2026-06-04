@@ -480,8 +480,52 @@ kbd {
   margin: 0;
 }
 
+.ai-model-picker {
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+}
+
+.ai-model-option {
+  min-height: 30px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ai-model-option.active {
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+
+.ai-model-option.disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.ai-model-option input {
+  width: auto;
+  min-height: auto;
+  margin: 0;
+}
+
 .ai-tools input {
   width: min(280px, 100%);
+}
+
+.ai-tools .ai-model-option input {
+  width: auto;
 }
 
 .ai-tools select {

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Autolabel Manual Labeling</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260604-ai-device" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260604-ai-model-picker" />
   </head>
   <body>
     <div class="app-shell">
@@ -87,6 +87,7 @@
                 <input id="aiAssistToggle" type="checkbox" />
                 <span>AI 辅助标注</span>
               </label>
+              <div id="aiModelPicker" class="ai-model-picker" title="选择本次辅助标注使用的模型；可随模型接入继续扩展"></div>
               <input id="samPromptInput" type="text" placeholder="SAM3.1 prompt / label" title="可选：SAM3.1 文本提示；不填则使用当前对象 label；没有 label 时使用 object" />
               <select id="aiDeviceSelect" title="选择 SAM3.1 推理设备；CPU 可用于排错但会很慢">
                 <option value="cuda:0">GPU 0</option>
@@ -159,6 +160,6 @@
         </div>
       </div>
     </div>
-    <script src="/static/app.js?v=20260604-ai-device"></script>
+    <script src="/static/app.js?v=20260604-ai-model-picker"></script>
   </body>
 </html>

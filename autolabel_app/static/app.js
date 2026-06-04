@@ -11,8 +11,18 @@ const state = {
   labelModalOpen: false,
   aiEnabled: false,
   aiDevice: localStorage.getItem("autolabel.aiDevice") || "cuda:0",
+  selectedAiModels: loadSelectedAiModels(),
   aiBusy: false,
 };
+
+const AI_MODELS = [
+  {
+    id: "sam3.1",
+    label: "SAM3.1",
+    description: "实例分割精修与文本查找同类",
+    available: true,
+  },
+];
 
 const CATEGORY_COLORS = [
   "#14746f",
@@ -64,6 +74,7 @@ const els = {
   saveButton: document.getElementById("saveButton"),
   aiAssistToggle: document.getElementById("aiAssistToggle"),
   samPromptInput: document.getElementById("samPromptInput"),
+  aiModelPicker: document.getElementById("aiModelPicker"),
   aiDeviceSelect: document.getElementById("aiDeviceSelect"),
   samRefineButton: document.getElementById("samRefineButton"),
   samFindButton: document.getElementById("samFindButton"),
@@ -127,7 +138,18 @@ function boot() {
   window.addEventListener("mouseup", onMouseUp);
   window.addEventListener("keydown", onKeyDown);
   loadAiDevices();
+  renderAiModelPicker();
   render();
+}
+
+function loadSelectedAiModels() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("autolabel.aiModels") || "[]");
+    if (Array.isArray(saved) && saved.length) return saved;
+  } catch {
+    // Fall back to the default model.
+  }
+  return ["sam3.1"];
 }
 
 async function loadAiDevices() {
@@ -285,29 +307,67 @@ function render() {
   renderAiControls();
 }
 
+function renderAiModelPicker() {
+  els.aiModelPicker.innerHTML = "";
+  AI_MODELS.forEach((model) => {
+    const option = document.createElement("label");
+    const checked = state.selectedAiModels.includes(model.id);
+    option.className = `ai-model-option${checked ? " active" : ""}${model.available ? "" : " disabled"}`;
+    option.title = model.description;
+    option.innerHTML = `
+      <input type="checkbox" value="${escapeAttr(model.id)}" ${checked ? "checked" : ""} ${model.available ? "" : "disabled"} />
+      <span>${escapeHtml(model.label)}</span>
+    `;
+    const input = option.querySelector("input");
+    input.addEventListener("change", () => {
+      if (input.checked) {
+        state.selectedAiModels = [...new Set([...state.selectedAiModels, model.id])];
+      } else {
+        state.selectedAiModels = state.selectedAiModels.filter((id) => id !== model.id);
+      }
+      localStorage.setItem("autolabel.aiModels", JSON.stringify(state.selectedAiModels));
+      renderAiModelPicker();
+      renderAiControls();
+    });
+    els.aiModelPicker.appendChild(option);
+  });
+}
+
 function renderAiControls() {
   const frame = currentFrame();
   const annotation = frame?.annotations.find((item) => item.id === state.selectedId);
+  const sam31Selected = aiModelSelected("sam3.1");
   els.aiAssistToggle.checked = state.aiEnabled;
   els.samPromptInput.disabled = !state.aiEnabled || state.aiBusy;
   els.aiDeviceSelect.disabled = state.aiBusy;
   els.aiDeviceSelect.value = state.aiDevice;
-  els.samRefineButton.disabled = !state.aiEnabled || !state.project || !annotation || state.aiBusy;
-  els.samFindButton.disabled = !state.aiEnabled || !state.project || state.aiBusy;
+  els.aiModelPicker.querySelectorAll("input").forEach((input) => {
+    input.disabled = state.aiBusy || !AI_MODELS.find((model) => model.id === input.value)?.available;
+  });
+  els.samRefineButton.disabled = !state.aiEnabled || !sam31Selected || !state.project || !annotation || state.aiBusy;
+  els.samFindButton.disabled = !state.aiEnabled || !sam31Selected || !state.project || state.aiBusy;
   els.samRefineButton.textContent = state.aiBusy ? "AI 处理中" : "AI 精修";
   els.samFindButton.textContent = state.aiBusy ? "AI 处理中" : "查找同类";
   if (!state.aiEnabled) {
     els.aiStatus.textContent = "未开启";
+  } else if (!state.selectedAiModels.length) {
+    els.aiStatus.textContent = "未选模型";
   } else if (!state.project) {
     els.aiStatus.textContent = "等待项目";
   } else if (state.aiBusy) {
     els.aiStatus.textContent = "推理中";
+  } else if (!sam31Selected) {
+    els.aiStatus.textContent = "SAM3.1 未选";
   } else {
     els.aiStatus.textContent = annotation ? `${selectedAiDeviceLabel()} 可用` : `${selectedAiDeviceLabel()} 可查找`;
   }
   if (annotation && !els.samPromptInput.value.trim()) {
     els.samPromptInput.placeholder = annotation.category || "object";
   }
+}
+
+function aiModelSelected(modelId) {
+  return state.selectedAiModels.includes(modelId);
 }
 
 function renderProjectMeta() {
@@ -381,6 +441,10 @@ async function refineSelectedWithSam31() {
     setStatus("请先开启 AI 辅助标注", "未开启");
     return;
   }
+  if (!aiModelSelected("sam3.1")) {
+    setStatus("请先在 AI 模型中勾选 SAM3.1", "未选模型");
+    return;
+  }
   const frame = currentFrame();
   const annotation = frame?.annotations.find((item) => item.id === state.selectedId);
   if (!state.project || !frame || !annotation) {
@@ -419,6 +483,10 @@ async function findSimilarWithSam31() {
   syncAiEnabledFromDom();
   if (!state.aiEnabled) {
     setStatus("请先开启 AI 辅助标注", "未开启");
+    return;
+  }
+  if (!aiModelSelected("sam3.1")) {
+    setStatus("请先在 AI 模型中勾选 SAM3.1", "未选模型");
     return;
   }
   const frame = currentFrame();
