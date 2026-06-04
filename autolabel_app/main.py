@@ -22,6 +22,7 @@ from autolabel_app.sam31_adapter import (
     list_sam31_devices,
     refine_annotation_with_sam31,
     sam31_available,
+    sam31_conda_env_available,
 )
 from autolabel_app.video_sampling import plan_frame_samples
 
@@ -169,6 +170,7 @@ def sam31_status():
         "available": sam31_available(),
         "model_dir": str(MODEL_DIR / "sam3"),
         "devices": list_sam31_devices(),
+        "conda_worker": sam31_conda_env_available(),
     }
 
 

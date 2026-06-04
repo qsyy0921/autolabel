@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import json
+import subprocess
 import sys
 from functools import lru_cache
 from pathlib import Path
@@ -14,6 +16,8 @@ from PIL import Image
 ROOT_DIR = Path(__file__).resolve().parents[1]
 SAM3_REPO = ROOT_DIR / "models" / "sam3" / "repo"
 SAM31_PT = ROOT_DIR / "models" / "sam3" / "checkpoints" / "sam3.1" / "sam3.1_multiplex.pt"
+DEFAULT_SAM31_CONDA_ENV = "sam3.1"
+DEFAULT_CONDA_EXE = "/home/panjunhao/miniconda3/bin/conda"
 
 
 class Sam31Unavailable(RuntimeError):
@@ -22,6 +26,19 @@ class Sam31Unavailable(RuntimeError):
 
 def sam31_available() -> bool:
     return SAM3_REPO.exists() and SAM31_PT.exists()
+
+
+def sam31_conda_env_available() -> bool:
+    conda_exe = Path(os.environ.get("AUTOLABEL_CONDA_EXE", DEFAULT_CONDA_EXE))
+    env_name = os.environ.get("AUTOLABEL_SAM31_CONDA_ENV", DEFAULT_SAM31_CONDA_ENV)
+    env_path = conda_exe.parent.parent / "envs" / env_name
+    return conda_exe.exists() and env_path.exists()
+
+
+def sam31_conda_python() -> Path:
+    conda_exe = Path(os.environ.get("AUTOLABEL_CONDA_EXE", DEFAULT_CONDA_EXE))
+    env_name = os.environ.get("AUTOLABEL_SAM31_CONDA_ENV", DEFAULT_SAM31_CONDA_ENV)
+    return conda_exe.parent.parent / "envs" / env_name / "bin" / "python"
 
 
 def list_sam31_devices() -> list[dict[str, Any]]:
@@ -69,6 +86,12 @@ def normalize_sam31_device(device: str | None = None) -> str:
     return f"cuda:{index}"
 
 
+def should_use_sam31_conda_worker() -> bool:
+    if os.environ.get("AUTOLABEL_SAM31_IN_WORKER") == "1":
+        return False
+    return os.environ.get("AUTOLABEL_SAM31_USE_CONDA", "1") != "0" and sam31_conda_env_available()
+
+
 @lru_cache(maxsize=4)
 def get_sam31_processor(device: str) -> Any:
     if not sam31_available():
@@ -98,7 +121,35 @@ def get_sam31_processor(device: str) -> Any:
     return Sam3Processor(model, device=device, confidence_threshold=float(os.environ.get("AUTOLABEL_SAM31_THRESHOLD", "0.35")))
 
 
+def sam31_inference_context(device: str):
+    import contextlib
+    import torch
+
+    if device.startswith("cuda:"):
+        return torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+    return contextlib.nullcontext()
+
+
 def refine_annotation_with_sam31(
+    image_path: Path,
+    annotation: dict[str, Any],
+    category: str,
+    device: str | None = None,
+) -> list[dict[str, Any]]:
+    if should_use_sam31_conda_worker():
+        return run_sam31_worker(
+            {
+                "action": "refine",
+                "image_path": str(image_path),
+                "annotation": annotation,
+                "category": category,
+                "device": device,
+            }
+        )
+    return refine_annotation_with_sam31_local(image_path, annotation, category, device=device)
+
+
+def refine_annotation_with_sam31_local(
     image_path: Path,
     annotation: dict[str, Any],
     category: str,
@@ -106,10 +157,12 @@ def refine_annotation_with_sam31(
 ) -> list[dict[str, Any]]:
     image = Image.open(image_path).convert("RGB")
     width, height = image.size
-    processor = get_sam31_processor(normalize_sam31_device(device))
-    state = processor.set_image(image)
-    prompt_box = pixel_bbox_to_normalized_cxcywh(annotation.get("bbox") or [0, 0, width, height], width, height)
-    output = processor.add_geometric_prompt(prompt_box, True, state)
+    normalized_device = normalize_sam31_device(device)
+    processor = get_sam31_processor(normalized_device)
+    with sam31_inference_context(normalized_device):
+        state = processor.set_image(image)
+        prompt_box = pixel_bbox_to_normalized_cxcywh(annotation.get("bbox") or [0, 0, width, height], width, height)
+        output = processor.add_geometric_prompt(prompt_box, True, state)
     candidates = output_to_annotations(output, category=category, source="sam3.1_refined", max_results=6)
     if not candidates:
         return []
@@ -126,20 +179,89 @@ def find_similar_with_sam31(
     threshold: float | None = None,
     device: str | None = None,
 ) -> list[dict[str, Any]]:
+    if should_use_sam31_conda_worker():
+        return run_sam31_worker(
+            {
+                "action": "find",
+                "image_path": str(image_path),
+                "prompt": prompt,
+                "category": category,
+                "max_results": max_results,
+                "threshold": threshold,
+                "device": device,
+            }
+        )
+    return find_similar_with_sam31_local(
+        image_path,
+        prompt=prompt,
+        category=category,
+        max_results=max_results,
+        threshold=threshold,
+        device=device,
+    )
+
+
+def find_similar_with_sam31_local(
+    image_path: Path,
+    prompt: str,
+    category: str,
+    max_results: int = 12,
+    threshold: float | None = None,
+    device: str | None = None,
+) -> list[dict[str, Any]]:
     if not prompt.strip():
         raise ValueError("SAM3.1 prompt is empty")
 
     image = Image.open(image_path).convert("RGB")
-    processor = get_sam31_processor(normalize_sam31_device(device))
+    normalized_device = normalize_sam31_device(device)
+    processor = get_sam31_processor(normalized_device)
     old_threshold = processor.confidence_threshold
     if threshold is not None:
         processor.confidence_threshold = float(threshold)
     try:
-        state = processor.set_image(image)
-        output = processor.set_text_prompt(prompt.strip(), state)
+        with sam31_inference_context(normalized_device):
+            state = processor.set_image(image)
+            output = processor.set_text_prompt(prompt.strip(), state)
         return output_to_annotations(output, category=category or prompt.strip(), source="sam3.1_suggestion", max_results=max_results)
     finally:
         processor.confidence_threshold = old_threshold
+
+
+def run_sam31_worker(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    python_exe = sam31_conda_python()
+    if not python_exe.exists():
+        raise RuntimeError(f"SAM3.1 conda python is missing: {python_exe}")
+    timeout = int(os.environ.get("AUTOLABEL_SAM31_WORKER_TIMEOUT", "420"))
+    command = [
+        str(python_exe),
+        "-m",
+        "autolabel_app.sam31_worker",
+    ]
+    env = os.environ.copy()
+    env["AUTOLABEL_SAM31_IN_WORKER"] = "1"
+    env["PYTHONPATH"] = f"{ROOT_DIR}:{env.get('PYTHONPATH', '')}".rstrip(":")
+    result = subprocess.run(
+        command,
+        input=json.dumps(payload),
+        text=True,
+        capture_output=True,
+        cwd=str(ROOT_DIR),
+        env=env,
+        timeout=timeout,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = "\n".join(
+            part for part in [result.stderr.strip(), result.stdout.strip()] if part
+        ) or "SAM3.1 worker failed"
+        raise RuntimeError(f"SAM3.1 conda worker failed: {detail[-2000:]}")
+    try:
+        output = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"SAM3.1 conda worker returned invalid JSON: {result.stdout[-1000:]}") from exc
+    if "error" in output:
+        raise RuntimeError(output["error"])
+    return output.get("annotations", [])
 
 
 def pixel_bbox_to_normalized_cxcywh(bbox: list[float], width: int, height: int) -> list[float]:
